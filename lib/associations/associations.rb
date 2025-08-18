@@ -10,15 +10,26 @@ module ActiveHash
         if options[:through]
           source_association_name = options[:source]&.to_s || association_id.to_s.singularize
 
-          through_klass = reflect_on_association(options[:through])&.klass
-          klass = through_klass&.reflect_on_association(source_association_name)&.klass
+          klass = if options[:source_type]
+                    options[:source_type].safe_constantize
+                  else
+                    through_klass = reflect_on_association(options[:through])&.klass
+                    through_klass&.reflect_on_association(source_association_name)&.klass
+                  end
 
           if klass && klass < ActiveHash::Base
+            source_foreign_key = "#{source_association_name}_id"
+
             define_method(association_id) do
               join_models = send(options[:through])
-              join_models.flat_map do |join_model|
-                join_model.send(source_association_name)
-              end.uniq
+              if options[:source_type]
+                ids = join_models.map { |join_model| join_model.send(source_foreign_key) }.compact.uniq
+                ids.flat_map { |id| klass.find_by_id(id) }.compact
+              else
+                join_models.flat_map do |join_model|
+                  join_model.send(source_association_name)
+                end.uniq
+              end
             end
 
             return
